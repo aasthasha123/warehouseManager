@@ -255,6 +255,7 @@
       <button class="tab-btn active" data-tab="register">Register Farmer</button>
       <button class="tab-btn" data-tab="scan">Scan &amp; Add Lot</button>
       <button class="tab-btn" data-tab="records">Records</button>
+      <button class="tab-btn" data-tab="logs">Logs</button>
     </nav>
 
     <!-- ============ REGISTER TAB ============ -->
@@ -339,7 +340,13 @@
       <div id="recordsList"><div class="loading">Loading records…</div></div>
     </section>
 
-   
+    <!-- ============ LOGS TAB ============ -->
+    <section class="panel" id="panel-logs" style="display:none;">
+      <h2>Logs</h2>
+      <p class="sub">Every edit made to a lot — e.g. a farmer taking goods back — newest first.</p>
+      <div class="banner" id="logsBanner"></div>
+      <div id="logsList"><div class="loading">Loading logs…</div></div>
+    </section>
 
     <footer class="note">
       Signed in to <span id="footerApiBase"></span>. Data is stored by the backend — this page only talks to it over the API.
@@ -587,7 +594,7 @@
     await storageDelete("cs:token");
     document.getElementById("appShell").style.display = "none";
     document.getElementById("authScreen").style.display = "block";
-    hideBanner("registerBanner"); hideBanner("scanBanner"); hideBanner("recordsBanner");
+    hideBanner("registerBanner"); hideBanner("scanBanner"); hideBanner("recordsBanner"); hideBanner("logsBanner");
     document.getElementById("passbookWrap").innerHTML = "";
     document.getElementById("scannedFarmerWrap").innerHTML = "";
     if (message) showBanner("authBanner", message, "bad"); else hideBanner("authBanner");
@@ -634,7 +641,7 @@
     } catch(err){ /* non-critical, ignore */ }
   }
 
-  const tabs = ["register", "scan", "records"];
+  const tabs = ["register", "scan", "records", "logs"];
   document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
@@ -647,6 +654,7 @@
     });
     if (tab !== "scan") stopCamera();
     if (tab === "records") renderRecords();
+    if (tab === "logs") renderLogs();
   }
 
   /* =========================================================
@@ -926,10 +934,11 @@
       <div class="lot-list">
         <h3>Lots on record</h3>
         <div id="lotTableWrap"></div>
+        <div id="editLotPanel"></div>
       </div>
     `;
 
-    renderLotTable(farmer.lots);
+    renderLotTable(farmer);
 
     document.getElementById("switchFarmerBtn").addEventListener("click", () => {
       wrap.innerHTML = "";
@@ -961,7 +970,7 @@
         });
         farmer.lots = updated.lots;
         document.getElementById("lotForm").reset();
-        renderLotTable(farmer.lots);
+        renderLotTable(farmer);
         showBanner("scanBanner", `Lot added for ${farmer.name}.`, "good");
       } catch(err){
         if (await handleAuthExpiry(err)) return;
@@ -970,28 +979,131 @@
     });
   }
 
-  function renderLotTable(lots){
+  function renderLotTable(farmer){
     const host = document.getElementById("lotTableWrap");
     if (!host) return;
+    const lots = farmer.lots;
     if (!lots || lots.length === 0){
       host.innerHTML = `<div class="empty-note">No lots logged yet for this farmer.</div>`;
       return;
     }
-    const rows = lots.slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).map(l => `
+    const sorted = lots.slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    const rows = sorted.map(l => `
       <tr>
         <td>${escapeHtml(l.item_name)}</td>
         <td>${l.quantity} ${escapeHtml(l.unit)}</td>
         <td>${escapeHtml(l.rack_no)}</td>
         <td>${escapeHtml(l.quality_grade)}</td>
         <td>${new Date(l.created_at).toLocaleDateString()}</td>
+        <td><button type="button" class="ghost small" data-edit-lot="${l.id}">Edit</button></td>
       </tr>
     `).join("");
     host.innerHTML = `
       <table class="lots">
-        <thead><tr><th>Item</th><th>Quantity</th><th>Rack</th><th>Grade</th><th>Logged</th></tr></thead>
+        <thead><tr><th>Item</th><th>Quantity</th><th>Rack</th><th>Grade</th><th>Logged</th><th></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     `;
+    host.querySelectorAll("[data-edit-lot]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const lot = sorted.find(l => l.id === btn.dataset.editLot);
+        if (lot) renderEditLotPanel(farmer, lot);
+      });
+    });
+  }
+
+  // Editing a lot is how a farmer taking goods back (fully or
+  // partially) gets recorded — the backend logs the before/after
+  // values automatically (see the Logs tab) whenever this saves.
+  function renderEditLotPanel(farmer, lot){
+    const panel = document.getElementById("editLotPanel");
+    panel.innerHTML = `
+      <div class="detail-box open" style="margin-top:14px;">
+        <h3 style="margin:0 0 14px;">Edit lot · ${escapeHtml(lot.item_name)}</h3>
+        <form id="editLotForm">
+          <div class="row2">
+            <div class="field" id="f-edititem">
+              <label for="editItem">Crop / item</label>
+              <input type="text" id="editItem" value="${escapeHtml(lot.item_name)}">
+              <div class="err">Enter what this lot contains.</div>
+            </div>
+            <div class="field" id="f-editqty">
+              <label for="editQty">Quantity</label>
+              <div style="display:flex; gap:8px;">
+                <input type="text" id="editQty" inputmode="decimal" value="${lot.quantity}" style="flex:2;">
+                <select id="editUnit" style="flex:1;">
+                  <option value="kg">kg</option>
+                  <option value="quintal">quintal</option>
+                  <option value="ton">ton</option>
+                  <option value="bags">bags</option>
+                </select>
+              </div>
+              <div class="hint">Lower this (or set it to 0) when the farmer takes goods back — it gets logged automatically.</div>
+              <div class="err">Quantity can't be negative.</div>
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field" id="f-editrack">
+              <label for="editRack">Rack no.</label>
+              <input type="text" id="editRack" value="${escapeHtml(lot.rack_no)}">
+              <div class="err">Enter a rack number.</div>
+            </div>
+            <div class="field" id="f-editgrade">
+              <label for="editGrade">Quality grade</label>
+              <input type="text" id="editGrade" value="${escapeHtml(lot.quality_grade)}">
+              <div class="err">Enter a quality grade.</div>
+            </div>
+          </div>
+          <div class="field">
+            <label for="editNote">Note (optional)</label>
+            <input type="text" id="editNote" placeholder="e.g. Farmer picked up 50kg on 15 July">
+          </div>
+          <div class="actions">
+            <button type="submit" class="cta">Save changes</button>
+            <button type="button" class="ghost" id="cancelEditLotBtn">Cancel</button>
+          </div>
+        </form>
+      </div>
+    `;
+    document.getElementById("editUnit").value = lot.unit;
+
+    document.getElementById("cancelEditLotBtn").addEventListener("click", () => {
+      panel.innerHTML = "";
+    });
+
+    document.getElementById("editLotForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const item_name = document.getElementById("editItem").value.trim();
+      const qtyRaw = document.getElementById("editQty").value.trim();
+      const unit = document.getElementById("editUnit").value;
+      const rack_no = document.getElementById("editRack").value.trim();
+      const quality_grade = document.getElementById("editGrade").value.trim();
+      const note = document.getElementById("editNote").value.trim();
+
+      const itemOk = item_name.length > 0;
+      const qtyOk = qtyRaw.length > 0 && !isNaN(Number(qtyRaw)) && Number(qtyRaw) >= 0;
+      const rackOk = rack_no.length > 0;
+      const gradeOk = quality_grade.length > 0;
+      setFieldValid("f-edititem", itemOk);
+      setFieldValid("f-editqty", qtyOk);
+      setFieldValid("f-editrack", rackOk);
+      setFieldValid("f-editgrade", gradeOk);
+      if (!itemOk || !qtyOk || !rackOk || !gradeOk) return;
+
+      try {
+        const updated = await apiRequest(`/api/lots/${lot.id}`, {
+          method: "PATCH",
+          body: { item_name, quantity: Number(qtyRaw), unit, rack_no, quality_grade, note }
+        });
+        farmer.lots = updated.lots;
+        panel.innerHTML = "";
+        renderLotTable(farmer);
+        showBanner("scanBanner", `Lot updated for ${farmer.name}.`, "good");
+      } catch(err){
+        if (await handleAuthExpiry(err)) return;
+        showBanner("scanBanner", err.message, "bad");
+      }
+    });
   }
 
   /* =========================================================
@@ -1060,6 +1172,40 @@
     box.classList.add("open");
   }
 
+  /* =========================================================
+     LOGS TAB
+  ========================================================== */
+  async function renderLogs(){
+    hideBanner("logsBanner");
+    const host = document.getElementById("logsList");
+    host.innerHTML = `<div class="loading">Loading logs…</div>`;
+    try {
+      const logs = await apiRequest("/api/logs");
+      if (!logs || logs.length === 0){
+        host.innerHTML = `<div class="empty-note">No lots have been edited yet.</div>`;
+        return;
+      }
+      const rows = logs.map(l => `
+        <tr>
+          <td>${escapeHtml(l.farmer_name)}</td>
+          <td>${escapeHtml(l.new_item_name)}</td>
+          <td>${l.prev_quantity} → ${l.new_quantity} ${escapeHtml(l.new_unit)}</td>
+          <td>${escapeHtml(l.note || "—")}</td>
+          <td>${new Date(l.created_at).toLocaleString()}</td>
+        </tr>
+      `).join("");
+      host.innerHTML = `
+        <table class="lots">
+          <thead><tr><th>Farmer</th><th>Item</th><th>Quantity change</th><th>Note</th><th>When</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    } catch(err){
+      if (await handleAuthExpiry(err)) return;
+      host.innerHTML = "";
+      showBanner("logsBanner", err.message, "bad");
+    }
+  }
 
   /* =========================================================
      INIT
