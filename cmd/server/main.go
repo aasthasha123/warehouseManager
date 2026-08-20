@@ -19,7 +19,7 @@ func main() {
 	ctx := context.Background()
 
 	// dsn := os.Getenv("DATABASE_URL")
-	dsn := "postgresql://warehouse_db_rz8e_user:k7uN3b7PnNdDxGRThtcJshFyWb4nisMP@dpg-d9aun95aeets739vl67g-a.singapore-postgres.render.com/warehouse_db_rz8e"
+	dsn := "postgresql://warehouse_db_2_user:E8lmUnkxa0cTf0H6CpjWUtuDhzKj4xNK@dpg-da3g4cm1egvs73ch2fbg-a.singapore-postgres.render.com/warehouse_db_2"
 	if dsn == "" {
 		log.Fatal("DATABASE_URL is not set — point it at your Postgres instance, " +
 			"e.g. the connection string from Render's Postgres dashboard " +
