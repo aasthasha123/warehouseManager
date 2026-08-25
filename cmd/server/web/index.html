@@ -762,7 +762,7 @@
       if (!dataUrl) return;
       const a = document.createElement("a");
       a.href = dataUrl;
-      a.download = `farmer-qr-${farmer.id}.png`;
+      a.download = `farmer-qr-${farmer.name}.png`;
       a.click();
     });
   }
