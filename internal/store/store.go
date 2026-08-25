@@ -392,58 +392,88 @@ func (db *DB) GetFarmerByToken(ctx context.Context, token string) (*Farmer, erro
 // their lots attached, using one query for the farmers and one for
 // all their lots (rather than N+1 queries per farmer).
 func (db *DB) ListFarmersByCompany(ctx context.Context, companyID string) ([]*Farmer, error) {
-	rows, err := db.pool.QueryContext(ctx,
-		`SELECT id, company_id, aadhar, name, place, phone, qr_token, registered_by, created_at
-		 FROM farmers WHERE company_id = $1 ORDER BY created_at DESC`,
-		companyID,
-	)
+	query := `
+		SELECT id, company_id, COALESCE(aadhar, '') AS aadhar, name, place, phone, qr_token, registered_by, created_at
+		FROM farmers
+		WHERE company_id = $1
+		ORDER BY created_at ASC
+	`
+	rows, err := db.pool.QueryContext(ctx, query, companyID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("querying farmers: %w", err)
 	}
-	farmers := []*Farmer{}
-	byID := map[string]*Farmer{}
-	ids := []string{}
-	for rows.Next() {
-		f := &Farmer{}
-		if err := rows.Scan(&f.ID, &f.CompanyID, &f.Aadhar, &f.Name, &f.Place, &f.Phone, &f.QRToken, &f.RegisteredBy, &f.CreatedAt); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		f.Lots = []Lot{}
-		farmers = append(farmers, f)
-		byID[f.ID] = f
-		ids = append(ids, f.ID)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, err
-	}
-	rows.Close()
+	defer rows.Close()
 
-	if len(ids) == 0 {
+	var farmers []*Farmer
+	farmerIDs := make([]string, 0)
+	farmerMap := make(map[string]*Farmer)
+
+	for rows.Next() {
+		var f Farmer
+		err := rows.Scan(
+			&f.ID,
+			&f.CompanyID,
+			&f.Aadhar,
+			&f.Name,
+			&f.Place,
+			&f.Phone,
+			&f.QRToken,
+			&f.RegisteredBy,
+			&f.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scanning farmer row: %w", err)
+		}
+
+		// Initialize to an empty slice so it serializes as [] instead of null in JSON
+		f.Lots = make([]Lot, 0)
+
+		farmers = append(farmers, &f)
+		farmerIDs = append(farmerIDs, f.ID)
+		farmerMap[f.ID] = &f
+	}
+
+	if len(farmerIDs) == 0 {
 		return farmers, nil
 	}
 
-	lotRows, err := db.pool.QueryContext(ctx,
-		`SELECT id, farmer_id, item_name, quantity, unit, rack_no, quality_grade, added_by, created_at
-		 FROM lots WHERE farmer_id = ANY($1) ORDER BY created_at DESC`,
-		pq.Array(ids),
-	)
+	// Fetch all lots associated with the gathered farmer IDs in one query
+	lotsQuery := `
+		SELECT id, farmer_id, item_name, quantity, unit, rack_no, quality_grade, added_by, created_at
+		FROM lots
+		WHERE farmer_id = ANY($1)
+		ORDER BY created_at ASC
+	`
+	lotRows, err := db.pool.QueryContext(ctx, lotsQuery, pq.Array(farmerIDs))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("querying lots: %w", err)
 	}
 	defer lotRows.Close()
+
 	for lotRows.Next() {
 		var farmerID string
-		l := Lot{}
-		if err := lotRows.Scan(&l.ID, &farmerID, &l.ItemName, &l.Quantity, &l.Unit, &l.RackNo, &l.QualityGrade, &l.AddedBy, &l.CreatedAt); err != nil {
-			return nil, err
+		var l Lot
+		err := lotRows.Scan(
+			&l.ID,
+			&farmerID,
+			&l.ItemName,
+			&l.Quantity,
+			&l.Unit,
+			&l.RackNo,
+			&l.QualityGrade,
+			&l.AddedBy,
+			&l.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scanning lot row: %w", err)
 		}
-		if f, ok := byID[farmerID]; ok {
-			f.Lots = append(f.Lots, l)
+
+		if farmer, ok := farmerMap[farmerID]; ok {
+			farmer.Lots = append(farmer.Lots, l)
 		}
 	}
-	return farmers, lotRows.Err()
+
+	return farmers, nil
 }
 
 func (db *DB) lotsForFarmer(ctx context.Context, farmerID string) ([]Lot, error) {
