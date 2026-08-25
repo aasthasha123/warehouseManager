@@ -29,7 +29,7 @@ var (
 // FreeTierFarmerLimit is how many farmers a "free" plan company may
 // onboard before they need to upgrade. Deliberately a plain const
 // for now rather than config — easy to find, easy to change.
-const FreeTierFarmerLimit = 25
+const FreeTierFarmerLimit = 150
 
 // SessionTTL is how long a login token stays valid.
 const SessionTTL = 7 * 24 * time.Hour
