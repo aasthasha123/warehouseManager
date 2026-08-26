@@ -63,6 +63,18 @@ type Farmer struct {
 	Lots         []Lot     `json:"lots"`
 }
 
+type FarmerQRDetails struct {
+	ID           string    `json:"id"`
+	CompanyID    string    `json:"company_id"`
+	Aadhar       *string   `json:"aadhar"` // Handles NULL
+	Name         string    `json:"name"`
+	Place        *string   `json:"place"` // Handles NULL
+	Phone        *string   `json:"phone"` // Handles NULL
+	QRToken      string    `json:"qr_token"`
+	RegisteredBy *string   `json:"registered_by"` // Handles NULL
+	CreatedAt    time.Time `json:"created_at"`
+	Lots         []Lot     `json:"lots"`
+}
 // Lot is one batch of produce a farmer has placed in cold storage.
 // Scan-and-add appends a new Lot to the farmer's record. Lots can
 // also be edited later (e.g. when a farmer takes some goods back) —
