@@ -367,11 +367,21 @@ func (db *DB) GetFarmer(ctx context.Context, id string) (*Farmer, error) {
 	return f, nil
 }
 
-func (db *DB) GetFarmerByToken(ctx context.Context, token string) (*Farmer, error) {
-	f := &Farmer{}
+func (db *DB) GetFarmerByToken(ctx context.Context, token string) (*FarmerQRDetails, error) {
+	f := &FarmerQRDetails{}
 	err := db.pool.QueryRowContext(ctx,
-		`SELECT id, company_id, aadhar, name, place, phone, qr_token, registered_by, created_at
-		 FROM farmers WHERE qr_token = $1`,
+		`SELECT 
+    id, 
+    company_id, 
+    COALESCE(aadhar, '') AS aadhar, 
+    name, 
+    COALESCE(place, '') AS place, 
+    COALESCE(phone, '') AS phone, 
+    qr_token, 
+    COALESCE(registered_by, '') AS registered_by, 
+    created_at 
+FROM farmers 
+WHERE qr_token = $1`,
 		token,
 	).Scan(&f.ID, &f.CompanyID, &f.Aadhar, &f.Name, &f.Place, &f.Phone, &f.QRToken, &f.RegisteredBy, &f.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -387,6 +397,7 @@ func (db *DB) GetFarmerByToken(ctx context.Context, token string) (*Farmer, erro
 	f.Lots = lots
 	return f, nil
 }
+
 
 // ListFarmersByCompany returns every farmer under a company with
 // their lots attached, using one query for the farmers and one for
